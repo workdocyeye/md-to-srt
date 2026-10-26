@@ -13,6 +13,12 @@ from pathlib import Path
 from typing import List, Tuple
 
 
+# 词内标点的占位符：切分时先保护、切完再还原。
+# 等长替换（1 char -> 1 char），不影响字数统计和时长计算。
+DOT = '\x00'    # opencode.json / v1.5.2 / example.com / 3.0
+COMMA = '\x01'  # 1,000
+
+
 class SRTGenerator:
     """Generate SRT subtitles from markdown content."""
 
@@ -103,12 +109,18 @@ class SRTGenerator:
         if len(text) <= self.max_chars:
             return [text]
 
+        # 词内标点不算句界，先换成等长占位符再切分：
+        #   opencode.json / v1.5.2 / example.com / 3.0  -> 英文点不切
+        #   1,000                                       -> 千分位逗号不切
+        protected = re.sub(r'(?<=[A-Za-z0-9])\.(?=[A-Za-z0-9])', DOT, text)
+        protected = re.sub(r'(?<=\d),(?=\d)', COMMA, protected)
+
         # Need to split the text
         lines = []
         current_line = ""
 
         # Split by sentences first
-        sentences = re.split(r'([。！？.!?])', text)
+        sentences = re.split(r'([。！？.!?])', protected)
 
         i = 0
         while i < len(sentences):
@@ -163,7 +175,8 @@ class SRTGenerator:
         if current_line:
             lines.append(current_line)
 
-        return lines
+        # 还原受保护的词内标点
+        return [line.replace(DOT, '.').replace(COMMA, ',') for line in lines]
 
     def calculate_duration(self, text: str) -> float:
         """
